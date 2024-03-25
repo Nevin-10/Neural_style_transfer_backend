@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Style Transfer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+    />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f5f5f5;
+        margin: 0;
+        padding: 0;
+      }
+
+      .container {
+        width: 80%;
+        margin: 0 auto;
+        text-align: center;
+        padding-top: 50px;
+      }
+
+      .upload-card {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        transition: box-shadow 0.3s ease;
+        display: inline-block;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .upload-card:hover {
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+      }
+
+      .upload-icon {
+        font-size: 48px;
+        margin-bottom: 10px;
+        color: #4caf50;
+      }
+
+      .upload-label {
+        font-size: 16px;
+        font-weight: bold;
+      }
+
+      .upload-input {
+        display: none;
+      }
+
+      .uploaded-image {
+        max-width: 100%;
+        max-height: 200px;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        transition: opacity 0.3s ease;
+      }
+      button {
+        background-color: #4caf50;
+        color: white;
+        padding: 14px 20px;
+        margin: 8px 0;
+        border: none;
+        cursor: pointer;
+        width: 100%;
+        border-radius: 4px;
+      }
+
+      button:hover {
+        opacity: 0.8;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      #duration {
+        font-size: 18px;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Neural Style Transfer</h1>
+      <form id="uploadForm">
+        <div class="upload-card" id="contentUpload">
+          <label for="content" class="upload-label">
+            <i class="fas fa-cloud-upload-alt upload-icon"></i><br />
+            Upload Content Image
+          </label>
+          <input
+            type="file"
+            id="content"
+            class="upload-input"
+            name="content"
+            accept="image/*"
+            required
+          />
+          <img
+            src=""
+            alt="Uploaded Content Image"
+            class="uploaded-image hidden"
+            id="contentImage"
+          />
+        </div>
+
+        <div class="upload-card" id="styleUpload">
+          <label for="style" class="upload-label">
+            <i class="fas fa-cloud-upload-alt upload-icon"></i><br />
+            Upload Style Image
+          </label>
+          <input
+            type="file"
+            id="style"
+            class="upload-input"
+            name="style"
+            accept="image/*"
+            required
+          />
+          <img
+            src=""
+            alt="Uploaded Style Image"
+            class="uploaded-image hidden"
+            id="styleImage"
+          />
+        </div>
+        <br /><br /><br />
+        <label for="epochs">Number of Epochs:</label>
+        <input
+          type="number"
+          id="epochs"
+          name="epochs"
+          value="1"
+          min="1"
+          required
+        /><br /><br />
+
+        <button type="submit" id="transferButton">Transfer Style</button>
+        <br /><br />
+        <div id="loadingMessage" class="hidden">
+          <i class="fas fa-spinner fa-spin"></i> Generating Image...
+        </div>
+
+        <div id="generatedImage"></div>
+        <div id="duration" class="hidden"></div>
+      </form>
+    </div>
+
+    <script>
+      document
+        .getElementById("content")
+        .addEventListener("change", function () {
+          var file = this.files[0];
+          var reader = new FileReader();
+          reader.onload = function (e) {
+            document.getElementById("contentImage").src = e.target.result;
+            document.getElementById("contentImage").classList.remove("hidden");
+          };
+          reader.readAsDataURL(file);
+        });
+
+      document.getElementById("style").addEventListener("change", function () {
+        var file = this.files[0];
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          document.getElementById("styleImage").src = e.target.result;
+          document.getElementById("styleImage").classList.remove("hidden");
+        };
+        reader.readAsDataURL(file);
+      });
+
+      document
+        .getElementById("uploadForm")
+        .addEventListener("submit", function (event) {
+          event.preventDefault();
+          var formData = new FormData();
+          formData.append(
+            "content",
+            document.getElementById("content").files[0]
+          );
+          formData.append("style", document.getElementById("style").files[0]);
+          formData.append("epochs", document.getElementById("epochs").value);
+
+          document
+            .getElementById("transferButton")
+            .setAttribute("disabled", true);
+          document.getElementById("loadingMessage").classList.remove("hidden");
+
+          document.getElementById("duration").classList.add("hidden"); // Hide the duration if it's already shown
+
+          var startTime = performance.now(); // Start measuring the time
+
+          fetch("/transfer_style", {
+            method: "POST",
+            body: formData,
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.result === "success") {
+                var generatedImage = document.createElement("img");
+                generatedImage.src = "/generated_image/" + data.generated_image;
+                document.getElementById("generatedImage").innerHTML = "";
+                document
+                  .getElementById("generatedImage")
+                  .appendChild(generatedImage);
+              } else {
+                console.error("Error:", data);
+              }
+              document
+                .getElementById("transferButton")
+                .removeAttribute("disabled");
+              document.getElementById("loadingMessage").classList.add("hidden");
+
+              var endTime = performance.now(); // Stop measuring the time
+              var duration = (endTime - startTime) / 1000; // Calculate the duration in seconds
+              document.getElementById("duration").innerHTML =
+                "Generation Time: " + duration.toFixed(2) + " seconds"; // Display the duration
+              document.getElementById("duration").classList.remove("hidden"); // Show the duration
+            })
+            .catch((error) => {
+              console.error("Error:", error);
+              document
+                .getElementById("transferButton")
+                .removeAttribute("disabled");
+              document.getElementById("loadingMessage").classList.add("hidden");
+            });
+        });
+    </script>
+  </body>
+</html>
