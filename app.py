@@ -1,14 +1,25 @@
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, jsonify, request, render_template, redirect, url_for, session
+import pyrebase
 import tensorflow as tf
 import numpy as np
 import PIL.Image
 import os
 
 app = Flask(__name__)
-@app.route('/')
-def index():
-    return render_template('index.html')
+app.secret_key = os.urandom(24).hex()  # Set a secret key for session management
 
+# Configure Firebase
+firebaseConfig = {
+    'apiKey': "AIzaSyAhCKUMbP8GGtwkAaAEV38dKWzn6BcxS5Y",
+    'authDomain': "neural-st.firebaseapp.com",
+    'projectId': "neural-st",
+    'storageBucket': "neural-st.appspot.com",
+    'messagingSenderId': "690387462569",
+    'appId': "1:690387462569:web:8b5709267710c33a227cb8",
+    'databaseURL': "https://neural-st-default-rtdb.firebaseio.com/" }
+
+firebase = pyrebase.initialize_app(firebaseConfig)
+auth = firebase.auth()
 
 # Load pre-trained model
 def load_model():
@@ -39,7 +50,6 @@ class StyleContentModel(tf.keras.models.Model):
         self.vgg.trainable = False
 
     def call(self, inputs):
-        "Expects float input in [0,1]"
         inputs = inputs * 255.0
         preprocessed_input = tf.keras.applications.vgg19.preprocess_input(inputs)
         outputs = self.vgg(preprocessed_input)
@@ -95,6 +105,9 @@ def style_transfer(content_image_path, style_image_path, output_path, epochs, st
         opt.apply_gradients([(grad, image)])
         image.assign(clip_0_1(image))
 
+   
+
+
     def style_content_loss(outputs):
         style_outputs = outputs['style']
         content_outputs = outputs['content']
@@ -114,43 +127,71 @@ def style_transfer(content_image_path, style_image_path, output_path, epochs, st
         for _ in range(steps_per_epoch):
             train_step(image)
 
-    # Convert the tensor to a NumPy array and remove the batch dimension
     generated_image_array = np.array(image[0].numpy() * 255, dtype=np.uint8)
-
-    # Save the generated image
     generated_image_pil = PIL.Image.fromarray(generated_image_array)
     generated_image_pil.save(output_path)
 
-@app.route('/transfer_style', methods=['POST'])
+@app.route('/')
+def index():
+    if 'user' in session:
+        return redirect(url_for('transfer_style'))
+    return render_template('index.html')
+
+# Login endpoint
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        try:
+            user = auth.sign_in_with_email_and_password(email, password)
+            session['user'] = user['idToken']  # Store user token in session
+            return redirect(url_for('transfer_style'))
+        except:
+            return render_template('login.html', error="Invalid email or password")
+    return render_template('login.html')
+
+# Signup endpoint
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        try:
+            user = auth.create_user_with_email_and_password(email, password)
+            return redirect(url_for('login'))
+        except:
+            return render_template('signup.html', error="Email already exists")
+    return render_template('signup.html')
+
+# Style Transfer endpoint
+@app.route('/transfer_style', methods=['GET', 'POST'])
 def transfer_style():
-    content_file = request.files['content']
-    style_file = request.files['style']
+    if 'user' not in session:
+        return redirect(url_for('login'))
 
-    content_filename = 'contentpic.jpg'
-    style_filename = 'stylepic.jpg'
-    output_filename = 'generated_image1.jpg'
+    if request.method == 'POST':
+        content_file = request.files['content']
+        style_file = request.files['style']
+        epochs = int(request.form.get('epochs', 1))
+        steps_per_epoch = int(request.form.get('steps_per_epoch', 5))
 
-    content_path = os.path.join('content', content_filename)
-    style_path = os.path.join('style', style_filename)
-    output_path = os.path.join('generated', output_filename)
+        content_filename = 'contentpic.jpg'
+        style_filename = 'stylepic.jpg'
+        output_filename = 'generated_image1.jpg'
 
-    content_file.save(content_path)
-    style_file.save(style_path)
+        content_path = os.path.join('content', content_filename)
+        style_path = os.path.join('style', style_filename)
+        output_path = os.path.join('generated', output_filename)
 
-    epochs = int(request.form.get('epochs', 1))
-    steps_per_epoch = int(request.form.get('steps_per_epoch', 5))
+        content_file.save(content_path)
+        style_file.save(style_path)
 
-    style_transfer(content_path, style_path, output_path, epochs, steps_per_epoch)
+        style_transfer(content_path, style_path, output_path, epochs, steps_per_epoch)
 
-    return jsonify({'result': 'success', 'generated_image': output_filename})
+        return jsonify({'result': 'success', 'generated_image': output_filename})
 
-@app.route('/generated_image/<path:image_name>')
-def get_generated_image(image_name):
-    generated_image_path = os.path.join('generated', image_name)
-    if os.path.exists(generated_image_path):
-        return send_file(generated_image_path, mimetype='image/jpeg')
-    else:
-        return jsonify({'message': 'Image not yet generated. Please wait for the process to complete.'})
+    return render_template('style_transfer.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
