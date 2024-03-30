@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, redirect, url_for, session
+from flask import Flask, jsonify, request, render_template, redirect, url_for, session,send_file
 import pyrebase
 import tensorflow as tf
 import numpy as np
@@ -178,7 +178,7 @@ def transfer_style():
 
         content_filename = 'contentpic.jpg'
         style_filename = 'stylepic.jpg'
-        output_filename = 'generated_image1.jpg'
+        output_filename = 'generated_image.jpg'
 
         content_path = os.path.join('content', content_filename)
         style_path = os.path.join('style', style_filename)
@@ -192,6 +192,12 @@ def transfer_style():
         return jsonify({'result': 'success', 'generated_image': output_filename})
 
     return render_template('style_transfer.html')
-
+@app.route('/generated/<path:image_name>')
+def get_generated_image(image_name):
+    generated_image_path = os.path.join('generated', image_name)
+    if os.path.exists(generated_image_path):
+        return send_file(generated_image_path, mimetype='image/jpeg')
+    else:
+        return jsonify({'message': 'Image not yet generated. Please wait for the process to complete.'})
 if __name__ == '__main__':
     app.run(debug=True)
